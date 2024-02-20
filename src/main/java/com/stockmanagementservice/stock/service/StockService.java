@@ -1,5 +1,7 @@
 package com.stockmanagementservice.stock.service;
 
+import com.stockmanagementservice.global.exception.StockException;
+import com.stockmanagementservice.global.type.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -15,8 +17,32 @@ public class StockService {
         return "상품 수량 추가 성공";
     }
 
-    public Long getStock(Long productId) {
-        Object stock = redisTemplate.opsForValue().get(String.valueOf(productId));
-        return Long.valueOf(stock == null ? "-1" : (String) stock);
+    public Long getStock(String productId) {
+        Object stock = redisTemplate.opsForValue().get(productId);
+
+        if (stock == null) throw new StockException(ErrorCode.NOT_FOUND_PRODUCT);
+
+        Object productOrder = redisTemplate.opsForValue().get(productId+"Order");
+
+        return Long.parseLong((String) stock) - (productOrder == null ? 0 : Long.parseLong((String) productOrder));
+    }
+
+    public String order(String productId) {
+        Object orderCount = redisTemplate.opsForValue().get(productId+"Order");
+        redisTemplate.opsForValue().set(productId +"Order",
+                String.valueOf((orderCount == null ? 0 : Long.parseLong((String) orderCount)) + 1));
+        return "주문 생성";
+    }
+
+    public String orderFail(String productId) {
+        Object orderCount = redisTemplate.opsForValue().get(productId+"Order");
+
+        if (orderCount == null || Long.parseLong((String) orderCount) == 0) {
+            return "주문 실패";
+        }
+
+        redisTemplate.opsForValue().set(productId +"Order",
+                String.valueOf(Long.parseLong((String) orderCount) - 1));
+        return "주문 실패";
     }
 }
