@@ -2,12 +2,12 @@ package com.stockmanagementservice.stock.controller;
 
 import com.stockmanagementservice.stock.service.StockService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-@Controller
+@RestController
 @RequiredArgsConstructor
 public class StockController {
     private final StockService stockService;
