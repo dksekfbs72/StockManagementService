@@ -1,48 +1,94 @@
 package com.stockmanagementservice.stock.service;
 
-import com.stockmanagementservice.global.exception.StockException;
-import com.stockmanagementservice.global.type.ErrorCode;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class StockService {
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final RedissonClient redissonClient;
+
+    @Transactional
     public String addStock(Long productId, Long amount) {
-        Object stock = redisTemplate.opsForValue().get(String.valueOf(productId));
-        Long sumStockAndAmount = Long.parseLong(stock == null ? "0" : (String) stock) + amount;
-        redisTemplate.opsForValue().set(String.valueOf(productId), String.valueOf(sumStockAndAmount));
-        return "상품 수량 추가 성공";
-    }
+        RLock lock = redissonClient.getLock("myLock");
 
-    public Long getStock(String productId) {
-        Object stock = redisTemplate.opsForValue().get(productId);
+        try {
+            lock.lock();
 
-        if (stock == null) throw new StockException(ErrorCode.NOT_FOUND_PRODUCT);
+            String key = String.valueOf(productId);
+            redissonClient.getAtomicLong(key).addAndGet(amount);
 
-        Object productOrder = redisTemplate.opsForValue().get(productId+"Order");
-
-        return Long.parseLong((String) stock) - (productOrder == null ? 0 : Long.parseLong((String) productOrder));
-    }
-
-    public String order(String productId) {
-        Object orderCount = redisTemplate.opsForValue().get(productId+"Order");
-        redisTemplate.opsForValue().set(productId +"Order",
-                String.valueOf((orderCount == null ? 0 : Long.parseLong((String) orderCount)) + 1));
-        return "주문 생성";
-    }
-
-    public String orderFail(String productId) {
-        Object orderCount = redisTemplate.opsForValue().get(productId+"Order");
-
-        if (orderCount == null || Long.parseLong((String) orderCount) == 0) {
-            return "주문 실패";
+            return "상품 수량 추가 성공";
+        } finally {
+            lock.unlock();
         }
+    }
 
-        redisTemplate.opsForValue().set(productId +"Order",
-                String.valueOf(Long.parseLong((String) orderCount) - 1));
-        return "주문 실패";
+    @Transactional
+    public Long getStock(String productId) {
+        RLock lock = redissonClient.getLock("myLock");
+
+        try {
+            lock.lock();
+
+            // Redis에서 상품의 재고량 조회
+            long stock = redissonClient.getAtomicLong(productId).get();
+
+            // Redis에서 상품의 주문된 수량 조회
+            long productOrder = redissonClient.getAtomicLong(productId + "Order").get();
+
+            // 실제 재고량 계산
+            return stock - productOrder;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Transactional
+    public String order(String productId) {
+        RLock lock = redissonClient.getLock("myLock");
+
+        try {
+            lock.lock();
+            long stock = redissonClient.getAtomicLong(productId).get();
+
+            // Redis에서 상품의 주문된 수량 조회
+            long productOrder = redissonClient.getAtomicLong(productId + "Order").get();
+
+            // 실제 재고량 계산
+            if (stock - productOrder <= 0) {
+                return "재고 부족";
+            }
+
+            redissonClient.getAtomicLong(productId + "Order").incrementAndGet();
+            return "주문 생성";
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Transactional
+    public String orderFail(String productId) {
+        RLock lock = redissonClient.getLock("myLock");
+
+        try {
+            lock.lock();
+
+            long orderCount = redissonClient.getAtomicLong(productId + "Order").get();
+
+            if (orderCount == 0) {
+                return "주문 실패";
+            }
+
+            // 주문된 수량을 감소시킴
+            redissonClient.getAtomicLong(productId + "Order").decrementAndGet();
+
+            return "주문 실패";
+        } finally {
+            lock.unlock();
+        }
     }
 }
