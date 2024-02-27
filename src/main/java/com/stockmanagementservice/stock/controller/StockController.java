@@ -15,15 +15,15 @@ public class StockController {
     }
 
     @PutMapping("/addStock")
-    public Long findStock(
+    public Long addStock(
             @RequestParam Long productId
     ) {
-        return stockService.findStock(productId);
+        return stockService.changeStock(productId);
     }
 
     @PutMapping("/order")
     public String order(@RequestParam Long productId) {
-        return stockService.order(String.valueOf(productId));
+        return stockService.order(productId);
     }
 
     @PutMapping("/orderFail")

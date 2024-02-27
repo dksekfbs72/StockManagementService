@@ -2,7 +2,6 @@ package com.stockmanagementservice.stock.service;
 
 import com.stockmanagementservice.global.config.feign.ProductClient;
 import lombok.RequiredArgsConstructor;
-import org.redisson.api.RAtomicLong;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
@@ -22,7 +21,9 @@ public class StockService {
             String key = String.valueOf(productId);
             lock.lock();
 
-            if (redissonClient.getAtomicLong(key) == null) {
+            long stock = redissonClient.getAtomicLong(key).get();
+
+            if (stock == 0) {
                 redissonClient.getAtomicLong(key).set(productClient.getStock(productId));
             }
 
@@ -40,12 +41,9 @@ public class StockService {
             lock.lock();
 
             // Redis에서 상품의 재고량 조회
-            RAtomicLong rStock = redissonClient.getAtomicLong(String.valueOf(productId));
-            Long stock;
-            if (rStock == null) {
+            Long stock = redissonClient.getAtomicLong(String.valueOf(productId)).get();
+            if (stock == 0) {
                 stock = findStock(productId);
-            } else {
-                stock = rStock.get();
             }
 
             // Redis에서 상품의 주문된 수량 조회
@@ -59,12 +57,16 @@ public class StockService {
     }
 
     @Transactional
-    public String order(String productId) {
+    public String order(Long productId) {
         RLock lock = redissonClient.getLock("myLock");
 
         try {
             lock.lock();
-            long stock = redissonClient.getAtomicLong(productId).get();
+
+            Long stock = redissonClient.getAtomicLong(String.valueOf(productId)).get();
+            if (stock == 0) {
+                stock = findStock(productId);
+            }
 
             // Redis에서 상품의 주문된 수량 조회
             long productOrder = redissonClient.getAtomicLong(productId + "Order").get();
@@ -98,6 +100,22 @@ public class StockService {
             redissonClient.getAtomicLong(productId + "Order").decrementAndGet();
 
             return "주문 실패";
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public Long changeStock(Long productId) {
+        RLock lock = redissonClient.getLock("stockLock");
+
+        try {
+            String key = String.valueOf(productId);
+
+            lock.lock();
+
+            redissonClient.getAtomicLong(key).set(productClient.getStock(productId));
+
+            return redissonClient.getAtomicLong(key).get();
         } finally {
             lock.unlock();
         }
