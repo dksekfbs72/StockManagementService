@@ -11,15 +11,14 @@ public class StockController {
     private final StockService stockService;
     @GetMapping
     public Long getStock(@RequestParam Long productId) {
-        return stockService.getStock(String.valueOf(productId));
+        return stockService.getStock(productId);
     }
 
     @PutMapping("/addStock")
-    public String addStock(
-            @RequestParam Long productId,
-            @RequestParam Long amount
+    public Long findStock(
+            @RequestParam Long productId
     ) {
-        return stockService.addStock(productId, amount);
+        return stockService.findStock(productId);
     }
 
     @PutMapping("/order")

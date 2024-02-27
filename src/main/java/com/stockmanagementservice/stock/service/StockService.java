@@ -1,6 +1,8 @@
 package com.stockmanagementservice.stock.service;
 
+import com.stockmanagementservice.global.config.feign.ProductClient;
 import lombok.RequiredArgsConstructor;
+import org.redisson.api.RAtomicLong;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
@@ -10,32 +12,41 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class StockService {
     private final RedissonClient redissonClient;
+    private final ProductClient productClient;
 
     @Transactional
-    public String addStock(Long productId, Long amount) {
-        RLock lock = redissonClient.getLock("myLock");
+    public Long findStock(Long productId) {
+        RLock lock = redissonClient.getLock("stockLock");
 
         try {
+            String key = String.valueOf(productId);
             lock.lock();
 
-            String key = String.valueOf(productId);
-            redissonClient.getAtomicLong(key).addAndGet(amount);
+            if (redissonClient.getAtomicLong(key) == null) {
+                redissonClient.getAtomicLong(key).set(productClient.getStock(productId));
+            }
 
-            return "상품 수량 추가 성공";
+            return redissonClient.getAtomicLong(key).get();
         } finally {
             lock.unlock();
         }
     }
 
     @Transactional
-    public Long getStock(String productId) {
+    public Long getStock(Long productId) {
         RLock lock = redissonClient.getLock("myLock");
 
         try {
             lock.lock();
 
             // Redis에서 상품의 재고량 조회
-            long stock = redissonClient.getAtomicLong(productId).get();
+            RAtomicLong rStock = redissonClient.getAtomicLong(String.valueOf(productId));
+            Long stock;
+            if (rStock == null) {
+                stock = findStock(productId);
+            } else {
+                stock = rStock.get();
+            }
 
             // Redis에서 상품의 주문된 수량 조회
             long productOrder = redissonClient.getAtomicLong(productId + "Order").get();
